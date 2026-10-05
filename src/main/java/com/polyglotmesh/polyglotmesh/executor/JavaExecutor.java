@@ -66,7 +66,7 @@ public class JavaExecutor implements CodeExecutor {
                 }
             }
 
-            String output = readOutput(runProcess);
+            String output = readOutput(runProcess).trim();
 
             int exitCode = runProcess.waitFor();
 

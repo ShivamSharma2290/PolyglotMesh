@@ -2,17 +2,26 @@ package com.polyglotmesh.polyglotmesh.service;
 
 import com.polyglotmesh.polyglotmesh.dto.CodeExecutionRequest;
 import com.polyglotmesh.polyglotmesh.dto.CodeExecutionResponse;
-import com.polyglotmesh.polyglotmesh.executor.CodeExecutor;
 import com.polyglotmesh.polyglotmesh.executor.JavaExecutor;
+import com.polyglotmesh.polyglotmesh.executor.JavaScriptExecutor;
+import com.polyglotmesh.polyglotmesh.executor.PythonExecutor;
 import org.springframework.stereotype.Service;
 
 @Service
 public class CodeExecutionService {
 
     private final JavaExecutor javaExecutor;
+    private final PythonExecutor pythonExecutor;
+    private final JavaScriptExecutor javaScriptExecutor;
 
-    public CodeExecutionService(JavaExecutor javaExecutor) {
+    public CodeExecutionService(
+            JavaExecutor javaExecutor,
+            PythonExecutor pythonExecutor,
+            JavaScriptExecutor javaScriptExecutor) {
+
         this.javaExecutor = javaExecutor;
+        this.pythonExecutor = pythonExecutor;
+        this.javaScriptExecutor = javaScriptExecutor;
     }
 
     public CodeExecutionResponse execute(CodeExecutionRequest request) {
@@ -46,6 +55,23 @@ public class CodeExecutionService {
         if (language.equals("java")) {
 
             return javaExecutor.execute(
+                    request.getCode(),
+                    request.getInput()
+            );
+        }
+
+        if (language.equals("python")) {
+
+            return pythonExecutor.execute(
+                    request.getCode(),
+                    request.getInput()
+            );
+        }
+
+        if (language.equals("javascript") ||
+                language.equals("js")) {
+
+            return javaScriptExecutor.execute(
                     request.getCode(),
                     request.getInput()
             );
