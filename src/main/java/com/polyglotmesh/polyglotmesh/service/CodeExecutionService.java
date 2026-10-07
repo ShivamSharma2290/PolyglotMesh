@@ -7,12 +7,17 @@ import com.polyglotmesh.polyglotmesh.executor.JavaScriptExecutor;
 import com.polyglotmesh.polyglotmesh.executor.PythonExecutor;
 import org.springframework.stereotype.Service;
 
+import java.util.Set;
+
 @Service
 public class CodeExecutionService {
 
     private final JavaExecutor javaExecutor;
     private final PythonExecutor pythonExecutor;
     private final JavaScriptExecutor javaScriptExecutor;
+
+    private static final Set<String> SUPPORTED_LANGUAGES =
+            Set.of("java", "python", "javascript");
 
     public CodeExecutionService(
             JavaExecutor javaExecutor,
@@ -52,6 +57,17 @@ public class CodeExecutionService {
 
         String language = request.getLanguage().toLowerCase();
 
+        if (!SUPPORTED_LANGUAGES.contains(language)) {
+
+            return new CodeExecutionResponse(
+                    language,
+                    "ERROR",
+                    "",
+                    "Language not supported: " + language,
+                    0
+            );
+        }
+
         if (language.equals("java")) {
 
             return javaExecutor.execute(
@@ -68,8 +84,7 @@ public class CodeExecutionService {
             );
         }
 
-        if (language.equals("javascript") ||
-                language.equals("js")) {
+        if (language.equals("javascript")) {
 
             return javaScriptExecutor.execute(
                     request.getCode(),
@@ -81,7 +96,7 @@ public class CodeExecutionService {
                 language,
                 "ERROR",
                 "",
-                "Language not supported yet: " + language,
+                "Language not supported: " + language,
                 0
         );
     }

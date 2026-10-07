@@ -1,5 +1,6 @@
 package com.polyglotmesh.polyglotmesh.executor;
 
+import com.polyglotmesh.polyglotmesh.config.ExecutionConfig;
 import com.polyglotmesh.polyglotmesh.dto.CodeExecutionResponse;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.io.IOAccess;
@@ -14,13 +15,27 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class PythonExecutor implements CodeExecutor {
 
+    private final ExecutionConfig executionConfig;
+
+    public PythonExecutor(ExecutionConfig executionConfig) {
+        this.executionConfig = executionConfig;
+    }
+
     @Override
     public CodeExecutionResponse execute(String code, String input) {
 
         long startTime = System.currentTimeMillis();
 
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        PrintStream printStream = new PrintStream(outputStream);
+        LimitedOutputStream outputStream =
+                new LimitedOutputStream(
+                        executionConfig.getMaxOutputSize()
+                );
+
+        PrintStream printStream = new PrintStream(
+                outputStream,
+                true,
+                StandardCharsets.UTF_8
+        );
 
         PrintStream originalOut = System.out;
         InputStream originalIn = System.in;
@@ -47,30 +62,48 @@ public class PythonExecutor implements CodeExecutor {
                 context.eval("python", code);
             }
 
-            long executionTime = System.currentTimeMillis() - startTime;
+            if (outputStream.isLimitExceeded()) {
 
-            String output = outputStream
-                    .toString(StandardCharsets.UTF_8)
-                    .trim();
+                return new CodeExecutionResponse(
+                        "python",
+                        "OUTPUT_LIMIT",
+                        "",
+                        "Output exceeded maximum limit of "
+                                + executionConfig.getMaxOutputSize()
+                                + " bytes",
+                        System.currentTimeMillis() - startTime
+                );
+            }
 
             return new CodeExecutionResponse(
                     "python",
                     "SUCCESS",
-                    output,
+                    outputStream.getOutput().trim(),
                     null,
-                    executionTime
+                    System.currentTimeMillis() - startTime
             );
 
         } catch (Exception e) {
 
-            long executionTime = System.currentTimeMillis() - startTime;
+            if (outputStream.isLimitExceeded()) {
+
+                return new CodeExecutionResponse(
+                        "python",
+                        "OUTPUT_LIMIT",
+                        "",
+                        "Output exceeded maximum limit of "
+                                + executionConfig.getMaxOutputSize()
+                                + " bytes",
+                        System.currentTimeMillis() - startTime
+                );
+            }
 
             return new CodeExecutionResponse(
                     "python",
                     "ERROR",
-                    outputStream.toString(StandardCharsets.UTF_8).trim(),
+                    outputStream.getOutput().trim(),
                     e.getMessage(),
-                    executionTime
+                    System.currentTimeMillis() - startTime
             );
 
         } finally {
@@ -79,6 +112,73 @@ public class PythonExecutor implements CodeExecutor {
             System.setIn(originalIn);
 
             printStream.close();
+        }
+    }
+
+    private static class LimitedOutputStream
+            extends ByteArrayOutputStream {
+
+        private final int maxSize;
+        private boolean limitExceeded = false;
+
+        public LimitedOutputStream(int maxSize) {
+            this.maxSize = maxSize;
+        }
+
+        @Override
+        public synchronized void write(
+                int value) {
+
+            if (count >= maxSize) {
+                limitExceeded = true;
+                return;
+            }
+
+            super.write(value);
+        }
+
+        @Override
+        public synchronized void write(
+                byte[] bytes,
+                int offset,
+                int length) {
+
+            if (count >= maxSize) {
+                limitExceeded = true;
+                return;
+            }
+
+            int remaining = maxSize - count;
+
+            if (length > remaining) {
+
+                super.write(
+                        bytes,
+                        offset,
+                        remaining
+                );
+
+                limitExceeded = true;
+
+            } else {
+
+                super.write(
+                        bytes,
+                        offset,
+                        length
+                );
+            }
+        }
+
+        public boolean isLimitExceeded() {
+            return limitExceeded;
+        }
+
+        public String getOutput() {
+
+            return toString(
+                    StandardCharsets.UTF_8
+            );
         }
     }
 }
