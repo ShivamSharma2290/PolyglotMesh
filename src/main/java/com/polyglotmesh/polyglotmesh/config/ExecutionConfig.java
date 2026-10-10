@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 public class ExecutionConfig {
 
     // Maximum execution time in milliseconds
-    private final long maxExecutionTime = 5000;
+    private final long maxExecutionTime = 100000;
 
     // Maximum output size in bytes
     private final int maxOutputSize = 10 * 1024;

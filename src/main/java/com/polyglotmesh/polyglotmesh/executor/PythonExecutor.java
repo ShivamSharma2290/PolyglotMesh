@@ -1,16 +1,24 @@
+
 package com.polyglotmesh.polyglotmesh.executor;
 
 import com.polyglotmesh.polyglotmesh.config.ExecutionConfig;
 import com.polyglotmesh.polyglotmesh.dto.CodeExecutionResponse;
 import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.io.IOAccess;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.io.PrintStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Component
 public class PythonExecutor implements CodeExecutor {
@@ -27,158 +35,135 @@ public class PythonExecutor implements CodeExecutor {
         long startTime = System.currentTimeMillis();
 
         LimitedOutputStream outputStream =
-                new LimitedOutputStream(
-                        executionConfig.getMaxOutputSize()
-                );
+                new LimitedOutputStream(executionConfig.getMaxOutputSize());
 
-        PrintStream printStream = new PrintStream(
-                outputStream,
-                true,
-                StandardCharsets.UTF_8
+        InputStream inputStream = new ByteArrayInputStream(
+                (input == null ? "" : input).getBytes(StandardCharsets.UTF_8)
         );
 
-        PrintStream originalOut = System.out;
-        InputStream originalIn = System.in;
+        ExecutorService executor = Executors.newSingleThreadExecutor();
 
-        try {
-
-            System.setOut(printStream);
-
-            if (input == null) {
-                input = "";
-            }
-
-            System.setIn(
-                    new ByteArrayInputStream(
-                            input.getBytes(StandardCharsets.UTF_8)
-                    )
-            );
-
+        Future<?> future = executor.submit(() -> {
             try (Context context = Context.newBuilder("python")
+                    .in(inputStream)
+                    .out(outputStream)
+                    .err(outputStream)
                     .allowAllAccess(false)
                     .allowIO(IOAccess.NONE)
                     .build()) {
 
                 context.eval("python", code);
             }
+        });
+
+        try {
+            future.get(
+                    executionConfig.getMaxExecutionTime(),
+                    TimeUnit.MILLISECONDS
+            );
+
+            long executionTime = System.currentTimeMillis() - startTime;
+            String output = outputStream.getOutput().trim();
 
             if (outputStream.isLimitExceeded()) {
-
                 return new CodeExecutionResponse(
-                        "python",
-                        "OUTPUT_LIMIT",
-                        "",
-                        "Output exceeded maximum limit of "
-                                + executionConfig.getMaxOutputSize()
-                                + " bytes",
-                        System.currentTimeMillis() - startTime
+                        "python", "OUTPUT_LIMIT", output,
+                        "Maximum output size exceeded", executionTime
                 );
             }
 
             return new CodeExecutionResponse(
-                    "python",
-                    "SUCCESS",
-                    outputStream.getOutput().trim(),
-                    null,
+                    "python", "SUCCESS", output, null, executionTime
+            );
+
+        } catch (TimeoutException e) {
+            future.cancel(true);
+
+            return new CodeExecutionResponse(
+                    "python", "TIMEOUT", outputStream.getOutput().trim(),
+                    "Execution timed out after "
+                            + executionConfig.getMaxExecutionTime() + " ms",
                     System.currentTimeMillis() - startTime
             );
 
-        } catch (Exception e) {
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
 
-            if (outputStream.isLimitExceeded()) {
-
-                return new CodeExecutionResponse(
-                        "python",
-                        "OUTPUT_LIMIT",
-                        "",
-                        "Output exceeded maximum limit of "
-                                + executionConfig.getMaxOutputSize()
-                                + " bytes",
-                        System.currentTimeMillis() - startTime
-                );
-            }
+            String error = cause instanceof PolyglotException
+                    ? cause.getMessage()
+                    : cause.getMessage();
 
             return new CodeExecutionResponse(
-                    "python",
-                    "ERROR",
-                    outputStream.getOutput().trim(),
-                    e.getMessage(),
+                    "python", "ERROR", outputStream.getOutput().trim(),
+                    error == null ? "Python execution failed" : error,
+                    System.currentTimeMillis() - startTime
+            );
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+
+            return new CodeExecutionResponse(
+                    "python", "ERROR", outputStream.getOutput().trim(),
+                    "Execution interrupted",
                     System.currentTimeMillis() - startTime
             );
 
         } finally {
+            future.cancel(true);
+            executor.shutdownNow();
 
-            System.setOut(originalOut);
-            System.setIn(originalIn);
-
-            printStream.close();
+            try {
+                inputStream.close();
+            } catch (Exception ignored) {
+                // Ignore input stream cleanup errors.
+            }
         }
     }
 
-    private static class LimitedOutputStream
-            extends ByteArrayOutputStream {
+    private static class LimitedOutputStream extends OutputStream {
 
         private final int maxSize;
+        private final ByteArrayOutputStream buffer =
+                new ByteArrayOutputStream();
+
         private boolean limitExceeded = false;
 
-        public LimitedOutputStream(int maxSize) {
+        LimitedOutputStream(int maxSize) {
             this.maxSize = maxSize;
         }
 
         @Override
-        public synchronized void write(
-                int value) {
-
-            if (count >= maxSize) {
+        public synchronized void write(int b) {
+            if (buffer.size() < maxSize) {
+                buffer.write(b);
+            } else {
                 limitExceeded = true;
-                return;
             }
-
-            super.write(value);
         }
 
         @Override
-        public synchronized void write(
-                byte[] bytes,
-                int offset,
-                int length) {
+        public synchronized void write(byte[] bytes, int offset, int length) {
+            int remaining = maxSize - buffer.size();
 
-            if (count >= maxSize) {
+            if (remaining <= 0) {
                 limitExceeded = true;
                 return;
             }
 
-            int remaining = maxSize - count;
+            int bytesToWrite = Math.min(length, remaining);
+            buffer.write(bytes, offset, bytesToWrite);
 
-            if (length > remaining) {
-
-                super.write(
-                        bytes,
-                        offset,
-                        remaining
-                );
-
+            if (bytesToWrite < length) {
                 limitExceeded = true;
-
-            } else {
-
-                super.write(
-                        bytes,
-                        offset,
-                        length
-                );
             }
         }
 
-        public boolean isLimitExceeded() {
-            return limitExceeded;
+        public synchronized String getOutput() {
+            return buffer.toString(StandardCharsets.UTF_8);
         }
 
-        public String getOutput() {
-
-            return toString(
-                    StandardCharsets.UTF_8
-            );
+        public synchronized boolean isLimitExceeded() {
+            return limitExceeded;
         }
     }
 }
