@@ -50,6 +50,7 @@ public class PythonExecutor implements CodeExecutor {
                     .err(outputStream)
                     .allowAllAccess(false)
                     .allowIO(IOAccess.NONE)
+                    .option("engine.WarnInterpreterOnly", "false")
                     .build()) {
 
                 context.eval("python", code);

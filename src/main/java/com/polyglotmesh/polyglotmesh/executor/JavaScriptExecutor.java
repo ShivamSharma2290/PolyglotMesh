@@ -44,6 +44,13 @@ public class JavaScriptExecutor implements CodeExecutor {
                     .allowAllAccess(false)
                     .build()) {
 
+                // Make frontend input available to JavaScript
+                context.getBindings("js").putMember(
+                        "input",
+                        input == null ? "" : input
+                );
+
+                // Execute JavaScript code
                 context.eval("js", code);
             }
 
