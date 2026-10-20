@@ -290,13 +290,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (
-            event.key === "Enter" &&
-            (event.ctrlKey || event.metaKey)
-        ) {
-            event.preventDefault();
-            executeCode();
-        }
-    });
+                    event.key === "Enter" &&
+                    (event.ctrlKey || event.metaKey)
+                ) {
+                    event.preventDefault();
+                    executeCode();
+                }
+            });
 
     if (themeButton) {
         themeButton.addEventListener("click", () => {
