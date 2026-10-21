@@ -298,22 +298,63 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             });
 
+
+/* =========================
+   DARK / LIGHT THEME
+========================= */
+
+
+function applyTheme(theme) {
+    const selectedTheme = theme === "light" ? "light" : "dark";
+
+    document.documentElement.setAttribute("data-theme", selectedTheme);
+    document.body.setAttribute("data-theme", selectedTheme);
+
     if (themeButton) {
-        themeButton.addEventListener("click", () => {
-            document.body.classList.toggle("dark-theme");
+        const isDark = selectedTheme === "dark";
+        const icon = themeButton.querySelector("i");
 
-            const darkMode = document.body.classList.contains(
-                "dark-theme"
-            );
+        if (icon) {
+            icon.className = isDark
+                ? "bi bi-sun-fill"
+                : "bi bi-moon-stars-fill";
+        }
 
-            themeButton.setAttribute(
-                "aria-label",
-                darkMode
-                    ? "Switch to light theme"
-                    : "Switch to dark theme"
-            );
-        });
+        themeButton.setAttribute(
+            "aria-label",
+            isDark ? "Switch to light theme" : "Switch to dark theme"
+        );
     }
+}
+
+let savedTheme = "dark";
+
+try {
+    savedTheme = localStorage.getItem("polyglotmesh-theme") || "dark";
+} catch (error) {
+    console.warn("Could not load saved theme.");
+}
+
+applyTheme(savedTheme);
+
+if (themeButton) {
+    themeButton.addEventListener("click", () => {
+        const current =
+            document.documentElement.getAttribute("data-theme") || "dark";
+
+        const next = current === "dark" ? "light" : "dark";
+
+        applyTheme(next);
+
+        try {
+            localStorage.setItem("polyglotmesh-theme", next);
+        } catch (error) {
+            console.warn("Could not save theme.");
+        }
+    });
+}
+
+
 
     updateLanguageBadge();
     updateLineNumbers();
